@@ -1,0 +1,14 @@
+/* hi
+
+*/
+def myf(int a) 
+{
+  return (a+4);   
+};
+
+a=5;
+b=6.123456789;
+c=cast<int32>(myf(8));
+print(typeid(c));
+setprecision(8);
+print("a=",a, " b=",b, " c=",c);

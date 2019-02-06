@@ -1,0 +1,32 @@
+
+
+eps=0.0000000001;
+f=1000.0;
+xl=0.0;
+xr=3.0;
+i=0;
+start=now();
+print(start);
+mid=0.0;
+j=1000;
+while(j)
+{
+while((f>eps)||(f<-eps))
+{
+ mid=(xl+xr)/2.0;
+ f=mid*mid-7.0;
+ if (f>0.0)
+    xr=mid;
+ else
+    xl=mid;
+ i=i+1;
+}
+j=j-1;
+f=1000.0;
+xl=0.0;
+xr=3.0;
+}
+dur=now()-start;
+setprecision(16);
+print("Duration:",dur, " iterations=",i);
+print("sqrt(7)=",mid);

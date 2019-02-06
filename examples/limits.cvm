@@ -1,0 +1,7 @@
+mx=5.0+cast<double>(4);
+print("mx=",mx);
+print(cast<int>(17.6));
+i64_max=9223372036854775807;
+print("i64_max:",i64_max);
+i64_max=i64_max+1;
+print("i64_min:",i64_max);//int64_minx

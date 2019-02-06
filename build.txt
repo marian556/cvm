@@ -1,0 +1,53 @@
+This project is a customizable,  lightweight and fast C like general purpose virtual machine and scripting language with 
+fast binding/calls to C/C++.
+
+For the language motivation and the features see readme.txt.
+
+You can import this project folder into eclipse on ubuntu.
+
+This was tested:
+Eclipse IDE for C/C++ Developers
+Version: Oxygen.2 Release (4.7.2)
+Build id: 20171218-0600
+OS: Linux, v.4.15.0-33-generic, x86_64 / gtk 3.22.30, WebKit 2.20.5
+
+or alternatively you can use makefile system with 'make' command bellow:
+
+Note: This is an experimental work in progress project that in current state will not work on Windows with Visual Studio 
+compiler due to lack of "calculated goto" language feature in windows compiler. 
+Only tested on GNU/Linux/ubuntu 18.04.01 LTS (bionic) with 64 bit g++ (Ubuntu 7.3.0-16ubuntu3) 7.3.0
+
+This project uses boost/spirit X3 parser in an essential way. Project was tested on boost 1.69.0 
+(you may want to use and you can try to use your default system version of boost first)
+and is compiled with C++17.
+
+marian@ubuntu:~$wget https://dl.bintray.com/boostorg/release/1.69.0/source/boost_1_69_0.tar.bz2
+marian@ubuntu:~$ tar xvjf boost_1_69_0.tar.bz2
+
+...Project is heavily adapted and extended from example calc9 in boost documentation:
+
+/usr/share/doc/libboost1.65-doc/examples/libs/spirit/example/x3/calc/calc9/
+...or..
+
+~/boost_1_69_0/libs/spirit/example/x3/calc/calc9/
+
+...although spirit X3 parser is header only if you don't use your system boost you need to 
+...proceed building boost,because we need boost_chrono and boost_filesystem at least to build...
+...you may have to configure your build system to include boost include path...
+...g++ -std=c++17 -I/home/marian/boost_1_69_0 ....
+
+marian@ubuntu:~/cvm$cd Release
+
+...you do only once build
+marian@ubuntu:~/cvm/Release$make
+...cvm binary should appear in this folder..
+
+marian@ubuntu:~/cvm/Release$cd ../examples
+
+...example output...
+
+marian@ubuntu:~/cvm/examples$ ../Release/cvm   bisec_sqrt7_func.cvm
+output of sqrt(7.0)=2.645751311064591 iter=1000000 time=1422746855ns
+
+marian@ubuntu:~/cvm/examples$ ../Release/cvm  -o bisec_sqrt7_func.cvm
+output of sqrt(7.0)=2.645751311064591 iter=1000000 time=795718714ns

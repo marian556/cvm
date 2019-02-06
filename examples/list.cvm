@@ -1,0 +1,6 @@
+rlist={2.0*1.5,0.0,3.4+3.4};
+ilist={4,3,7};
+print(rlist,"| ",rlist[2]," ", typeid(rlist));
+print(ilist,"| ",ilist[2]," ", typeid(ilist));
+rlist[1]=6.7;
+print(rlist[1]);

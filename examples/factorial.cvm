@@ -1,0 +1,12 @@
+//recursive function
+
+func factorial(int n) -> int
+{
+    if (n<2)
+      return (1);
+    return (n*factorial(n-1));
+};
+
+a=20;
+print(a,"!=",factorial(a));
+

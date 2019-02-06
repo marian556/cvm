@@ -1,0 +1,12 @@
+//recursive function
+
+func fib(long n) -> long
+{
+    if (n<3)
+      return (1);
+    return (fib(n-1)+fib(n-2));
+};
+
+a=41;
+print("fib(",a,")=",fib(a));
+
