@@ -1,0 +1,45 @@
+
+func bisection_sqrt(double arg,double eps,double xl0,double xr0,int64 iter) ->double
+{
+    f=eps*2.0;
+    mid=0.0;
+    j=0;
+
+	t0=now();
+	inner_iter=0;
+    while(j<iter)
+    {
+        xl=xl0;
+        xr=xr0;
+        f=eps+eps;
+        while((f>eps)||(f<-eps))
+        {
+            mid=(xl+xr)/2.0;
+            f=mid*mid-arg;
+            if (f>0.0)
+                xr=mid;
+            else
+                xl=mid;
+            inner_iter=inner_iter+1; 
+        }
+        ++j;
+    }
+    t1=now();
+    dt=t1-t0;
+    print( " duration=", dt," iterations =", inner_iter," ns  time/iter:",dt/inner_iter," ns");
+    //ťč
+    return (mid);
+
+};
+
+arg=7.0;
+eps=0.000000001;//1e-15
+iter=100000;//000000;//000000;//000000;
+
+
+res=bisection_sqrt(arg,eps,0.0,3.0,iter);
+
+setprecision(15);
+mytext="output of sqrt(";
+print(mytext,arg,")=",res, " eps=",eps);
+

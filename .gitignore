@@ -1,3 +1,9 @@
 *.[od]
-Debug/cvm
-Release/cvm
+/Debug/
+/Release/
+__pycache__/
+*.nbi
+*.nbc
+.ipynb_checkpoints/
+examples/bisect_c
+/cvm

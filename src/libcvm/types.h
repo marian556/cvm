@@ -11,6 +11,7 @@
 #include <map>
 #include <vector>
 #include <algorithm>
+#include <bit>
 #include <boost/type_index.hpp>
 #include <boost/any.hpp>
 
@@ -19,17 +20,33 @@ typedef boost::typeindex::type_index TypeID;
 
 #define TO_TYPEID(A) TypeID(*(TypeID::type_info_t*)A)
 
+#include <bit>
+
 template <typename T>
-int64_t reinterpret_as_int64(T val)
+inline int64_t reinterpret_as_int64(T val)
 {
-	return *(int64_t*)&val;
+	return std::bit_cast<int64_t>(val);
 }
 
 template <typename T>
-T reinterpret_as(int64_t val)
+inline T reinterpret_as(int64_t val)
 {
-	return *(T*)&val;
+	return std::bit_cast<T>(val);
 }
+
+
+
+//template <typename T>
+//int64_t reinterpret_as_int64(T val)
+//{
+//	return *(int64_t*)&val;
+//}
+//
+//template <typename T>
+//T reinterpret_as(int64_t val)
+//{
+//	return *(T*)&val;
+//}
 
 #define TO_DOUBLE(A) reinterpret_as<double>(A)
 #define TO_INT64(A) reinterpret_as_int64(A)

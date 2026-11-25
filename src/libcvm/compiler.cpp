@@ -1249,7 +1249,7 @@ namespace client { namespace code_gen
             rt=(*this)(s);
             if (!rt)
             {
-            	error_handler(s, "Compiling of statement failed. ");
+            	//error_handler(s, "Compiling of statement failed. ");
                 return false;
             }
             stack_required=std::max(stack_required,stack_used+rt.stack_requirement);

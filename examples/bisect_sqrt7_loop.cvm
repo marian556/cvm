@@ -1,14 +1,14 @@
 
 
-eps=0.0000000001;
+eps=0.000000001;
 f=1000.0;
 xl=0.0;
 xr=3.0;
 i=0;
 start=now();
-print(start);
+//print(start);
 mid=0.0;
-j=1000;
+j=100000;
 while(j)
 {
 while((f>eps)||(f<-eps))
@@ -28,5 +28,5 @@ xr=3.0;
 }
 dur=now()-start;
 setprecision(16);
-print("Duration:",dur, " iterations=",i);
-print("sqrt(7)=",mid);
+print("Duration:",dur, " ns iterations=",i, " time/iter=", (dur/i));
+print("sqrt(7)=",mid, "  eps=",eps);

@@ -1,7 +1,7 @@
 /* hi
 
 */
-def myf(int a) 
+func myf(int a) -> int
 {
   return (a+4);   
 };

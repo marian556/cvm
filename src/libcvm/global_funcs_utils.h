@@ -7,6 +7,7 @@
 #ifndef GLOBAL_FUNCS_UTILS_H_
 #define GLOBAL_FUNCS_UTILS_H_
 
+#include <bit>
 #include <inttypes.h>
 #include "types.h"
 #include "global_funcs.h"
@@ -31,7 +32,8 @@ inline constexpr int64_t retcast(int val)
 template<>
 inline constexpr int64_t retcast(double val)
 {
-	return reinterpret_cast<int64_t&>(val);
+	//return reinterpret_cast<int64_t&>(val);
+	return std::bit_cast<int64_t>(val);      // was: return reinterpret_cast<int64_t&>(val);
 }
 
 template<typename T>
@@ -58,7 +60,8 @@ inline constexpr int argcast<int>(int64_t val)
 template<>
 inline constexpr double argcast<double>(int64_t val)
 {
-	return reinterpret_cast<const double&>(val);
+	//return reinterpret_cast<const double&>(val);
+	return std::bit_cast<double>(val);       // was: return reinterpret_cast<const double&>(val);
 }
 
 template<>

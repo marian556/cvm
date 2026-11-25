@@ -13,6 +13,7 @@
 #include <boost/fusion/include/io.hpp>
 #include <boost/optional.hpp>
 #include <list>
+#include <ostream>
 #include "types.h"
 
 namespace client { namespace ast

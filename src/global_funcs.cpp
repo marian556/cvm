@@ -24,13 +24,19 @@ double myplus(double a,double b)
 ADAPT(myplus);
 
 //this is unsafe, as compiler does not check the type and count of passed arguments, this exposes application stack directly
+//int64_t myplus_raw(int64_t* args)
+//{
+//	double arg0=*(double*)args;
+//	double arg1=*(double*)++args;
+//	arg0+=arg1;
+//	return reinterpret_cast<int64_t&>(arg0);
+//}
+
 int64_t myplus_raw(int64_t* args)
 {
-	double arg0=*(double*)args;
-	double arg1=*(double*)++args;
-	arg0+=arg1;
-	return reinterpret_cast<int64_t&>(arg0);
+	return std::bit_cast<int64_t>(std::bit_cast<double>(args[0]) + std::bit_cast<double>(args[1]));
 }
+
 
 void do_something()
 {
@@ -151,36 +157,67 @@ const auto print2args_l=adapt(
 );
 
 //variadic function with same types arguments  signature "double func(double...)"
+//inline double sum_double(int64_t count,const int64_t* ptr)
+//{
+//    double sum = 0;
+//    for (int i = 0; i < count; ++i) {
+//        sum += *(double*)ptr++;
+//    }
+//    return sum;
+//}
+
 inline double sum_double(int64_t count,const int64_t* ptr)
 {
     double sum = 0;
-    for (int i = 0; i < count; ++i) {
-        sum += *(double*)ptr++;
-    }
+    for (int64_t i = 0; i < count; ++i)
+        sum += std::bit_cast<double>(ptr[i]);
     return sum;
 }
 
-const auto f_sum_double=adapt_variadic(sum_double);
 
-//the same thing without wrapping
-int64_t sum_double2(int64_t count,const int64_t* ptr)
+const auto f_sum_double=adapt_variadic(sum_double);
+#include <bit>
+#include <cstdint>
+
+std::int64_t sum_double2(std::int64_t count, const std::int64_t* ptr)
 {
-    double sum = 0;
-    for (int i = 0; i < count; ++i) {
-        sum += *(double*)ptr++;
+    static_assert(sizeof(double) == sizeof(std::int64_t));
+    double sumv = 0.0;
+    for (std::int64_t i = 0; i < count; ++i) {
+        sumv += std::bit_cast<double>(ptr[i]);
     }
-    return *(int64_t*)&sum;
+    return std::bit_cast<std::int64_t>(sumv);
 }
+
+// //the same thing without wrapping
+// int64_t sum_double2(int64_t count,const int64_t* ptr)
+// {
+//     double sumv = 0.0;
+//     for (int i = 0; i < count; ++i) {
+//         sumv += *(double*)ptr++;
+//     }
+//     return *(int64_t*)&sumv;
+// }
 
 int64_t add_any(int64_t count,const int64_t* ptr,const int64_t* ptr_types)
 {
     double sum = 0;
-    for (int i = 0; i < count; ++i) {
-    	TypeID tp=TO_TYPEID(*ptr_types++);
-        sum += (tp==DOUBLE) ? *(double*)ptr++ : (double)*ptr++;//either double or int64_t
+    for (int64_t i = 0; i < count; ++i) {
+        TypeID tp = TO_TYPEID(ptr_types[i]);
+        sum += (tp==DOUBLE) ? std::bit_cast<double>(ptr[i]) : (double)ptr[i];
     }
-    return *(int64_t*)&sum;
+    return std::bit_cast<int64_t>(sum);
 }
+
+//int64_t add_any(int64_t count,const int64_t* ptr,const int64_t* ptr_types)
+//{
+//    double sum = 0;
+//    for (int i = 0; i < count; ++i) {
+//    	TypeID tp=TO_TYPEID(*ptr_types++);
+//        sum += (tp==DOUBLE) ? *(double*)ptr++ : (double)*ptr++;//either double or int64_t
+//    }
+//    return *(int64_t*)&sum;
+//}
 
 inline int64_t sum_int64(int64_t count,const int64_t* ptr)
 {
@@ -197,14 +234,23 @@ const auto f_sum_int64=adapt_variadic(sum_int64);
 inline double sum_double_from_to(int64_t count,const int64_t* ptr,int64_t from,int64_t to)
 {
     double sum = 0;
-    if (to<count)
-    	count=to;
-    ptr+=from;
-    for (int i = from; i < count; ++i) {
-        sum += *(double*)ptr++;
-    }
+    if (to<count) count=to;
+    for (int64_t i = from; i < count; ++i)
+        sum += std::bit_cast<double>(ptr[i]);
     return sum;
 }
+//
+//inline double sum_double_from_to(int64_t count,const int64_t* ptr,int64_t from,int64_t to)
+//{
+//    double sum = 0;
+//    if (to<count)
+//    	count=to;
+//    ptr+=from;
+//    for (int i = from; i < count; ++i) {
+//        sum += *(double*)ptr++;
+//    }
+//    return sum;
+//}
 
 const auto f_sum_double_from_to=adapt_variadic(sum_double_from_to);
 

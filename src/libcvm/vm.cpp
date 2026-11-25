@@ -14,6 +14,9 @@
 #include <setjmp.h>
 #include "global_funcs.h"
 //#define DEBUG
+//#define VM_FORCE_SWITCH
+//#define CVM_NO_PIN_REGS
+
 namespace client
 {
    const int instr_size[]={//one unit is 8 bytes int64_t
@@ -264,7 +267,9 @@ namespace client
    	  return ((unsigned long)eax) | (((unsigned long)edx) << 32);
    	}*/
 
-
+//Claude: . Other approaches, which I wouldn't pick here
+   //One function per opcode with tail calls ([[clang::musttail]], and as far as I know newer GCC versions have an equivalent).
+   //It performs well, but it's a rewrite and you need to pass the VM state through every call.
 
     int64_t vmachine::execute1(
       //  std::vector<int64_t> const& code,
@@ -278,15 +283,17 @@ namespace client
     	//longjmp(env,1);
         int64_t lhs_i=0;
         int64_t tmp;
+        int64_t jump;
 
         double *lhs_dptr=0;
 
         //double *rhs_dptr=0;
         int64_t* pci=0;
 
-
+#if !defined(VM_FORCE_SWITCH)
+        
 static void* dispatch_table[] = {
-		&&exit_label,  		//
+		&&l_exit,  		//
 		&&l_nop,         //  no exec
 
 		&&l_stk_adj,     // adjust the stack (for args and locals)
@@ -300,7 +307,7 @@ static void* dispatch_table[] = {
 
 		&&l_ucall,
 		&&l_return_void,
-		&&l_return,
+		&&l_return_int,
 
 		// registered C/C++ functions calls
 		&&l_call,        // C function call with fixed signature
@@ -404,77 +411,121 @@ static void* dispatch_table[] = {
 		ELAB,
 
 };
-
-
+#endif
+        
+#if defined(__GNUC__) && !defined(VM_FORCE_SWITCH)
+  #define VM_COMPUTED_GOTO 1
+  #define CASE(x)          l_##x:
 #ifdef DEBUG
 
 #define FIRST_DISPATCH() {std::cout << "-------------new-frame ------------" << std::endl << "[" << (pc-&code[0]) << "->" << *pc << "," << instr_name[*pc] << "]" << std::endl; } \
-	goto *dispatch_table[*pc++]
+    goto *dispatch_table[*pc++]
 
 #define DISPATCH() {std::cout << "[" << (pc-&code[0]) << "->" << *pc << "," << instr_name[*pc] << "]" << std::endl; } \
-	goto *dispatch_table[*pc++]
+    goto *dispatch_table[*pc++]
 
 #else
 
-#define FIRST_DISPATCH()  goto *dispatch_table[*pc++]
-#define DISPATCH()  goto *dispatch_table[*pc++]
+  #define DISPATCH()       goto *dispatch_table[*pc++]
+  #define FIRST_DISPATCH() DISPATCH()
+#endif
+  
 
+  #define FALLTHROUGH
+#else
+  #define VM_COMPUTED_GOTO 0
+  #define CASE(x)          case op_##x:
+  #define DISPATCH()       continue          // back to top of the for loop
+#ifdef DEBUG
+  #define FIRST_DISPATCH() {std::cout << "-------------new-frame ------------" << std::endl << "[" << (pc-&code[0]) << "->" << *pc << "," << instr_name[*pc] << "]" << std::endl; }
+#else 
+  #define FIRST_DISPATCH()
+#endif
+  #define FALLTHROUGH      [[fallthrough]]
 #endif
 
-register
-	int64_t* frame_ptr asm ("r15")
- 			=&*frame_ptr_;
+#if defined(__GNUC__)
+  #define VM_UNREACHABLE() __builtin_unreachable()
+#elif defined(_MSC_VER)
+  #define VM_UNREACHABLE() __assume(0)
+#endif
 
- //int64_t* frame_ptr_save=0;// r10 is volatile accross calls, we need to save it
+        
 
- register
-	const int64_t* pc asm ("r12")
-             =&*pc_;
-//        register
-//	const int64_t* pc_end //asm ("r12")
-//   	 	 	 =&*pc_+code.size();
- register
-	const int64_t* pc_beg asm ("r14")
- 			=&code[0];
- register
-	int64_t* stack_ptr asm ("r13")
- 			=&*frame_ptr_;
+//register
+//	int64_t* frame_ptr asm ("r15")
+// 			=&*frame_ptr_;
+//
+// //int64_t* frame_ptr_save=0;// r10 is volatile accross calls, we need to save it
+//
+// register
+//	const int64_t* pc asm ("r12")
+//             =&*pc_;
+////        register
+////	const int64_t* pc_end //asm ("r12")
+////   	 	 	 =&*pc_+code.size();
+// register
+//	const int64_t* pc_beg asm ("r14")
+// 			=&code[0];
+// register
+//	int64_t* stack_ptr asm ("r13")
+// 			=&*frame_ptr_;
+//
+// register
+// 	 double tmp_reg asm("xmm3")=0.0;
 
- register
- 	 double tmp_reg asm("xmm3")=0.0;
+#if defined(__GNUC__) && defined(__x86_64__) && !defined(CVM_NO_PIN_REGS)
+  #define VM_REG(type, name, reg)  register type name asm(reg)
+#else
+  #define VM_REG(type, name, reg)  type name
+#endif
+
+VM_REG(int64_t*,        frame_ptr, "r15") = &*frame_ptr_;
+VM_REG(const int64_t*,  pc,        "r12") = &*pc_;
+VM_REG(const int64_t*,  pc_beg,    "r14") = &code[0];
+VM_REG(int64_t*,        stack_ptr, "r13") = &*frame_ptr_;
+VM_REG(double,          tmp_reg,   "xmm3") = 0.0;
 
 // int64_t (*pf)(int64_t*)=0;
 
 FIRST_DISPATCH();
-
-l_nop:         //  no exec
+        
+#if !VM_COMPUTED_GOTO
+for (;;) 
+ { 
+     //int64_t jump = *pc++;
+     switch (*pc++) {
+#endif
+    
+CASE(nop)         //  no exec
  	DISPATCH();
 
-l_stk_adj_chk:   // adjust the stack (for args and locals) with check the adjustment will not cross end of stack space
+CASE(stk_adj_chk)   // adjust the stack (for args and locals) with check the adjustment will not cross end of stack space
 				// we should check here the total stack use after locals don't get exceeded
 	if (size_t(stack_ptr-&*stack_.begin()+*pc)>=stack_.size())
 	{
 		throw stack_overflow_exception(pc+1-&*code.begin());
 	}
+    FALLTHROUGH
 	//fallthrough
-l_stk_adj:     // adjust the stack (for args and locals)
+CASE(stk_adj)     // adjust the stack (for args and locals)
 	stack_ptr +=  *pc++;
 	DISPATCH();
 
-l_stk_assert:	//if remaining stack space is less than specified throw exception with stack content and program counter
+CASE(stk_assert)	//if remaining stack space is less than specified throw exception with stack content and program counter
 	if (size_t(stack_ptr-&*stack_.begin()+*pc++)>=stack_.size())
 	{
 		throw stack_overflow_exception(pc-&*code.begin());
 	}
 	DISPATCH();
 
-l_less_assert:   //if value on the top of stack is more or equal than value provided then throw an exception
+CASE(less_assert)   //if value on the top of stack is more or equal than value provided then throw an exception
 	if (stack_ptr[-1] >= *pc++)
 	{
 		throw array_index_top_bound_exception(pc-&*code.begin(),"?",stack_ptr[-1]);
 	}
 	DISPATCH();
-l_0_less_assert: //if value on the top of stack is less then zero or more or equal than value provided then throw an exception
+CASE(0_less_assert) //if value on the top of stack is less then zero or more or equal than value provided then throw an exception
 	lhs_i=stack_ptr[-1];
 	if ((lhs_i < 0)||(lhs_i >= *pc++))
 	{
@@ -483,13 +534,13 @@ l_0_less_assert: //if value on the top of stack is less then zero or more or equ
 	DISPATCH();
 
 //https://en.m.wikibooks.org/wiki/X86_Disassembly/Functions_and_Stack_Frames
-l_ucall://argc, addr
+CASE(ucall)//argc, addr
 //  N arguments
 //		arg0,arg1...argN-1, argCount, caller_addr, caller_FP, local
 //		-(N+2)			-2		-2	    -1			0			1     2
 
     lhs_i = *pc++;
-    int64_t jump = *pc++;
+    jump = *pc++;
     //int64_t st_off=(stack_ptr-frame_ptr);
 
     *stack_ptr++=lhs_i;
@@ -525,7 +576,7 @@ l_ucall://argc, addr
 
 	DISPATCH();
 
-l_return:
+CASE(return_int)
 #ifdef DEBUG
 	std::cout << "ret:" << stack_ptr[-1]  << " " <<
 	*(double*)&stack_ptr[-1] << "d " << std::endl;
@@ -543,7 +594,7 @@ l_return:
 
 	DISPATCH();
 	//return stack_ptr[-1];
-l_return_void:
+CASE(return_void)
 #ifdef DEBUG
 	std::cout << "ret:" << stack_ptr[-1]  << " " <<
 	*(double*)&stack_ptr[-1] << "d " << std::endl;
@@ -562,34 +613,34 @@ l_return_void:
 	//return stack_ptr[-1];
 
 // C/C++ functions calls
-l_call:
+CASE(call)
 	stack_ptr-=*pc++;
 	tmp=((int64_t (*)(int64_t*))*pc++)(stack_ptr);
 	*stack_ptr++=tmp;
 	DISPATCH();
 
-l_callv:       // function with no return type type void func(args...);
+CASE(callv)       // function with no return type type void func(args...);
 	stack_ptr-=*pc++;
 	((int64_t (*)(int64_t*))*pc++)(stack_ptr);
 	DISPATCH();
 
-l_call0reg:       // function call with zero arguments T func();
+CASE(call0reg)       // function call with zero arguments T func();
 	*stack_ptr++=((int64_t(*)())(((std::pair<func_signature,func_ptr>*)(*pc++))->second.p))();
 	DISPATCH();
 
-l_call0:       // function call with zero arguments T func();
+CASE(call0)       // function call with zero arguments T func();
 	*stack_ptr++=((int64_t(*)())*pc++)();
 	DISPATCH();
 
-l_callv0reg:      // function with no return type and zero args void func();
+CASE(callv0reg)      // function with no return type and zero args void func();
 	((void (*)(void))(((std::pair<func_signature,func_ptr>*)(*pc++))->second.p))();
 	DISPATCH();
 
-l_callv0:	// function with no return type and zero args void func(); optimized/direct call
+CASE(callv0)	// function with no return type and zero args void func(); optimized/direct call
 	((void(*)())*pc++)();
 	DISPATCH();
 
-l_callvar:
+CASE(callvar)
 	stack_ptr-=*pc++;//moving to the beginning of all arguments
 	lhs_i=*pc++;//this is size of variadic part only
 	tmp=((int64_t (*)(int64_t*,int64_t,int64_t*,const int64_t*))pc[lhs_i])(&data[0],lhs_i,stack_ptr,pc);
@@ -598,7 +649,7 @@ l_callvar:
 	*stack_ptr++=tmp;
 	DISPATCH();
 
-l_callv_var:
+CASE(callv_var)
 	stack_ptr-=*pc++;//moving to the beginning of all arguments
 	lhs_i=*pc++;//this is size of variadic part only
 	((void (*)(int64_t*,int64_t,int64_t*,const int64_t*))pc[lhs_i])(&data[0],lhs_i,stack_ptr,pc);
@@ -606,7 +657,7 @@ l_callv_var:
 	++pc;
 	DISPATCH();
 
-l_callvararr:
+CASE(callvararr)
 	lhs_i=*pc++;
 	stack_ptr-=lhs_i;
 	// first argument is variadic type , second is total count (variadic and non-variadic) arguments and third pointer stack of arguments
@@ -614,7 +665,7 @@ l_callvararr:
 	*stack_ptr++=tmp;
 	DISPATCH();
 
-l_callv_var_arr:
+CASE(callv_var_arr)
 	lhs_i=*pc++;
 	stack_ptr-=lhs_i;
 	// first argument is variadic type , second is total count (variadic and non-variadic) arguments and third pointer stack of arguments
@@ -623,73 +674,73 @@ l_callv_var_arr:
 
 
 
-l_load:
+CASE(load)
     *stack_ptr++ = frame_ptr[*pc++];
     DISPATCH();
 
-l_store:
+CASE(store)
     --stack_ptr;
     frame_ptr[*pc++] = stack_ptr[0];
     DISPATCH();
 
-l_deref:		//  take top of stack as an offset from frame pointer in stack and replace it with the value containing it
+CASE(deref)		//  take top of stack as an offset from frame pointer in stack and replace it with the value containing it
 	stack_ptr[-1]=frame_ptr[stack_ptr[-1]];
 	DISPATCH();
 
-l_deref_assign://  uses top 2 stack entries and does something like:
+CASE(deref_assign)//  uses top 2 stack entries and does something like:
 							//  FP[stack[top]]=stack[top-1]; POP;POP;
 	stack_ptr-=2;
 	frame_ptr[stack_ptr[1]]=stack_ptr[0];
 	DISPATCH();
 
-l_load_ds:
+CASE(load_ds)
 	*stack_ptr++ = data[*pc++];
 	DISPATCH();
 
-l_store_ds:
+CASE(store_ds)
 	--stack_ptr;
 	lhs_i=stack_ptr[0];
 	data[*pc++] = lhs_i;
 	DISPATCH();
 
-l_deref_ds:	//  take top of stack as an location of value in data segment and replace it with the value containing it
+CASE(deref_ds)	//  take top of stack as an location of value in data segment and replace it with the value containing it
 	stack_ptr[-1]=data[stack_ptr[-1]];
 	DISPATCH();
 
-l_deref_ds_assign://  uses top 2 stack entries and does something like:
+CASE(deref_ds_assign)//  uses top 2 stack entries and does something like:
 					//data[stack[top]]=stack[top-1]; POP;POP;
 	stack_ptr-=2;
 	data[stack_ptr[1]]=stack_ptr[0];
 	DISPATCH();
 
-l_double:
-l_int:
-l_str8:
+CASE(double) FALLTHROUGH
+CASE(int)    FALLTHROUGH
+CASE(str8) FALLTHROUGH
 	*stack_ptr++ = *pc++;
 	DISPATCH();
 
-l_true:
+CASE(true)
 	*stack_ptr++ = true;
 	DISPATCH();
 
-l_false:
+CASE(false)
 	*stack_ptr++ = false;
 	DISPATCH();
 
-l_set:			//  set variable from prog / constant
-l_set_double://  set variable from prog / constant
+CASE(set)		FALLTHROUGH	//  set variable from prog / constant
+CASE(set_double)//  set variable from prog / constant
 	lhs_i=*pc++;
     frame_ptr[lhs_i] = *pc++;
     DISPATCH();
 
-l_mov:			//  dst:=src
+CASE(mov)			//  dst:=src
 	lhs_i=*pc++;
     frame_ptr[lhs_i]= frame_ptr[*pc++];
     DISPATCH();
 
 //strangely, when the next l_tsc block is moved at any other spot up the timing gets 15% worse even if tsc is never used,
 //investigate gcc code optimization, memory allignement?
-l_tsc:
+CASE(tsc)
 /*
 	{ register
  		unsigned int eax asm ("eax");
@@ -701,11 +752,11 @@ l_tsc:
 	*stack_ptr++ = 0;//tsc();
 	DISPATCH();
 
-l_jump:        //  jump to an absolute position in the code
+CASE(jump)        //  jump to an absolute position in the code
 	pc = pc_beg+*pc;
 	DISPATCH();
 
-l_jump_if:     //  skip absolutely if top stack is true
+CASE(jump_if)     //  skip absolutely if top stack is true
 	--stack_ptr;
 	if (bool(stack_ptr[0]))
 		pc = pc_beg+*pc;
@@ -713,7 +764,7 @@ l_jump_if:     //  skip absolutely if top stack is true
 		++pc;
 	DISPATCH();
 
-l_jump_if_not:     //  jump to an absolute position in the code if top stack
+CASE(jump_if_not)     //  jump to an absolute position in the code if top stack
                 //  evaluates to false
 	--stack_ptr;
 	if (!bool(stack_ptr[0]))
@@ -722,7 +773,7 @@ l_jump_if_not:     //  jump to an absolute position in the code if top stack
          ++pc;
     DISPATCH();
 
-l_jump_and_keep_stack_if:     //  used to short circuit expr2  in   (expr1 && expr2)
+CASE(jump_and_keep_stack_if)     //  used to short circuit expr2  in   (expr1 && expr2)
     				//  evaluates to false
 	if (bool(stack_ptr[-1]))
 		 pc = pc_beg+*pc;
@@ -733,7 +784,7 @@ l_jump_and_keep_stack_if:     //  used to short circuit expr2  in   (expr1 && ex
 	}
 	DISPATCH();
 
-l_jump_and_keep_stack_if_not:     //  used to short circuit expr2  in   (expr1 && expr2)
+CASE(jump_and_keep_stack_if_not)     //  used to short circuit expr2  in   (expr1 && expr2)
 				//  evaluates to false
 	if (!bool(stack_ptr[-1]))
 		 pc = pc_beg+*pc;
@@ -744,76 +795,76 @@ l_jump_and_keep_stack_if_not:     //  used to short circuit expr2  in   (expr1 &
 	}
 	DISPATCH();
 
-l_neg:
+CASE(neg)
 	stack_ptr[-1] = -stack_ptr[-1];
 	DISPATCH();
 
-l_negd:
+CASE(negd)
 	*(double*)&stack_ptr[-1] = -*(double*)&stack_ptr[-1];
 	DISPATCH();
 
-l_not:
+CASE(not)
     stack_ptr[-1] = !bool(stack_ptr[-1]);
     DISPATCH();
 
-l_and:
+CASE(and)
 	--stack_ptr;
 	stack_ptr[-1] = bool(stack_ptr[-1]) && bool(stack_ptr[0]);
 	DISPATCH();
 
-l_or:
+CASE(or)
 	--stack_ptr;
 	stack_ptr[-1] = bool(stack_ptr[-1]) || bool(stack_ptr[0]);
 	DISPATCH();
 
-l_cast_int2double:
+CASE(cast_int2double)
 	*(double*)&stack_ptr[-1]=(double)stack_ptr[-1];
 	DISPATCH();
 
-l_cast_double2int:
+CASE(cast_double2int)
 	stack_ptr[-1]=(int64_t)*(double*)&stack_ptr[-1];
 	DISPATCH();
 
-l_inc:
+CASE(inc)
 	++(frame_ptr[*pc++]);
 	DISPATCH();
 
-l_dec:
+CASE(dec)
 	--(frame_ptr[*pc++]);
 	DISPATCH();
 
 
 //arithmetics
-l_add_s_is_is:
+CASE(add_s_is_is)
 	--stack_ptr;
 	stack_ptr[-1] += stack_ptr[0];
 	DISPATCH();
 
-l_add_s_iv_iv:
+CASE(add_s_iv_iv)
 	lhs_i=*pc++;
     stack_ptr++[0] = frame_ptr[lhs_i]+frame_ptr[*pc++];
 	DISPATCH();
 
-l_add_r_ds_ds:
+CASE(add_r_ds_ds)
 	tmp_reg=*(double*)(void*)&stack_ptr[-1] + *(double*)(void*)&stack_ptr[0];
 	DISPATCH();
 
-l_add_s_ds_ds:
+CASE(add_s_ds_ds)
 	--stack_ptr;
     *(double*)(void*)&stack_ptr[-1] += *(double*)(void*)&stack_ptr[0];
 	DISPATCH();
 
-l_add_r_dv_dv:
+CASE(add_r_dv_dv)
 	lhs_i=*pc++;
 	tmp_reg = *(double*)(void*)&frame_ptr[lhs_i]+*(double*)(void*)&frame_ptr[*pc++];
 	DISPATCH();
 
-l_add_s_dv_dv:
+CASE(add_s_dv_dv)
 	lhs_i=*pc++;
     *(double*)(void*)&stack_ptr++[0] = *(double*)(void*)&frame_ptr[lhs_i]+*(double*)(void*)&frame_ptr[*pc++];
 	DISPATCH();
 
-l_add_s_dv_dv_:
+CASE(add_s_dv_dv_)
 //	{
 	//int64_t* pci=0;
 	pci=const_cast<int64_t*>(&*pc);
@@ -823,80 +874,80 @@ l_add_s_dv_dv_:
 	*(int64_t**)pci=&frame_ptr[*pci];
 	//fallthrough
 	//}
-
-l_add_s_dg_dg:
+    FALLTHROUGH
+CASE(add_s_dg_dg)
 	lhs_dptr=(double*)*pc++;
 	//rhs_dptr=(double*)*pc++;
 	*(double*)(void*)&stack_ptr++[0]= *lhs_dptr +  *(double*)*pc++;
 	DISPATCH();
 
-l_add_v_ds_dc:
+CASE(add_v_ds_dc)
 	lhs_i=*pc++;
 	*(double*)&frame_ptr[lhs_i]=*(double*)(void*)&(--stack_ptr)[0] + *(double*)(void*)&(*pc++);
 	DISPATCH();
 
-l_add_v_ds_dv:
+CASE(add_v_ds_dv)
 	lhs_i=*pc++;
 	*(double*)&frame_ptr[lhs_i]=*(double*)(void*)&(--stack_ptr)[0] + *(double*)(void*)&frame_ptr[*pc++];
 	DISPATCH();
 
-l_sub_s_is_is:
+CASE(sub_s_is_is)
 	--stack_ptr;
 	stack_ptr[-1] -= stack_ptr[0];
 	DISPATCH();
 
-l_sub_s_iv_iv:
+CASE(sub_s_iv_iv)
 	lhs_i=*pc++;
 	stack_ptr++[0] = frame_ptr[lhs_i]-frame_ptr[*pc++];
 	DISPATCH();
 
-l_sub_s_ds_ds:
+CASE(sub_s_ds_ds)
 	--stack_ptr;
 	*(double*)&stack_ptr[-1] -= *(double*)&stack_ptr[0];
 	DISPATCH();
 
-l_sub_s_dv_dv:
+CASE(sub_s_dv_dv)
 	lhs_i=*pc++;
 	*(double*)(void*)&stack_ptr++[0] = *(double*)(void*)&frame_ptr[lhs_i] - *(double*)(void*)&frame_ptr[*pc++];
 	DISPATCH();
 
-l_sub_s_dg_dg:
+CASE(sub_s_dg_dg)
 	lhs_dptr=(double*)*pc++;
 	//rhs_dptr=(double*)*pc++;
 	*(double*)(void*)&stack_ptr++[0]= *lhs_dptr -  *(double*)*pc++;
 	DISPATCH();
 
-l_sub_v_ds_dc:
+CASE(sub_v_ds_dc)
 	lhs_i=*pc++;
 	*(double*)&frame_ptr[lhs_i]=*(double*)(void*)&(--stack_ptr)[0] - *(double*)(void*)&(*pc++);
 	DISPATCH();
 
-l_sub_v_ds_dv:
+CASE(sub_v_ds_dv)
 	lhs_i=*pc++;
 	*(double*)&frame_ptr[lhs_i]=*(double*)(void*)&(--stack_ptr)[0] - *(double*)(void*)&frame_ptr[*pc++];
 	DISPATCH();
 
-l_mul_s_is_is:
+CASE(mul_s_is_is)
 	--stack_ptr;
 	stack_ptr[-1] *= stack_ptr[0];
 	DISPATCH();
 
-l_mul_s_iv_iv:
+CASE(mul_s_iv_iv)
 	lhs_i=*pc++;
 	stack_ptr++[0] = frame_ptr[lhs_i]*frame_ptr[*pc++];
 	DISPATCH();
 
-l_mul_s_ds_ds:
+CASE(mul_s_ds_ds)
 	--stack_ptr;
     *(double*)(void*)&stack_ptr[-1] *= *(double*)(void*)&stack_ptr[0];
 	DISPATCH();
 
-l_mul_s_dv_dv:
+CASE(mul_s_dv_dv)
 	lhs_i=*pc++;
 	*(double*)(void*)&stack_ptr++[0] = *(double*)(void*)&frame_ptr[lhs_i] * *(double*)(void*)&frame_ptr[*pc++];
 	DISPATCH();
 
-l_mul_s_dv_dv_:
+CASE(mul_s_dv_dv_)
 //	{
 	//int64_t* pci=0;
 	pci=const_cast<int64_t*>(&*pc);
@@ -906,60 +957,61 @@ l_mul_s_dv_dv_:
 	*(int64_t**)pci=&frame_ptr[*pci];
 	//}
 	//fallthrough
+    FALLTHROUGH
 
-l_mul_s_dg_dg:
+CASE(mul_s_dg_dg)
 	lhs_dptr=(double*)*pc++;
 	//rhs_dptr=(double*)*pc++;
 	*(double*)(void*)&stack_ptr++[0]= *lhs_dptr *  *(double*)*pc++;
 	DISPATCH();
 
-l_mul_v_dr_dc:
+CASE(mul_v_dr_dc)
 	lhs_i=*pc++;
 	*(double*)&frame_ptr[lhs_i]=tmp_reg * *(double*)(void*)&(*pc++);
 	DISPATCH();
 
-l_mul_v_ds_dc:
+CASE(mul_v_ds_dc)
 	lhs_i=*pc++;
 	*(double*)&frame_ptr[lhs_i]=*(double*)(void*)&(--stack_ptr)[0] * *(double*)(void*)&(*pc++);
 	DISPATCH();
 
-l_mul_v_ds_dv:
+CASE(mul_v_ds_dv)
 	lhs_i=*pc++;
 	*(double*)&frame_ptr[lhs_i]=*(double*)(void*)&(--stack_ptr)[0] * *(double*)(void*)&frame_ptr[*pc++];
 	DISPATCH();
 
-l_div_s_is_is:
+CASE(div_s_is_is)
 	--stack_ptr;
 	stack_ptr[-1] /= stack_ptr[0];
 	DISPATCH();
 
-l_div_s_iv_iv:
+CASE(div_s_iv_iv)
 	lhs_i=*pc++;
 	stack_ptr++[0] = frame_ptr[lhs_i]/frame_ptr[*pc++];
 	DISPATCH();
 
-l_div_s_ds_ds:
+CASE(div_s_ds_ds)
 	--stack_ptr;
 	*(double*)&stack_ptr[-1] /= *(double*)&stack_ptr[0];
 	DISPATCH();
 
-l_div_s_dv_dv:
+CASE(div_s_dv_dv)
 	lhs_i=*pc++;
 	*(double*)(void*)&stack_ptr++[0] = *(double*)(void*)&frame_ptr[lhs_i] / *(double*)(void*)&frame_ptr[*pc++];
 	DISPATCH();
 
-l_div_s_dg_dg:
+CASE(div_s_dg_dg)
 	lhs_dptr=(double*)*pc++;
 	//rhs_dptr=(double*)*pc++;
 	*(double*)(void*)&stack_ptr++[0]= *lhs_dptr /  *(double*)*pc++;
 	DISPATCH();
 
-l_div_v_ds_dc:
+CASE(div_v_ds_dc)
 	lhs_i=*pc++;
 	*(double*)&frame_ptr[lhs_i]=*(double*)(void*)&(--stack_ptr)[0] / *(double*)(void*)&(*pc++);
 	DISPATCH();
 
-l_div_v_ds_dv:
+CASE(div_v_ds_dv)
 	lhs_i=*pc++;
 	*(double*)&frame_ptr[lhs_i]=*(double*)(void*)&(--stack_ptr)[0] / *(double*)(void*)&frame_ptr[*pc++];
 	DISPATCH();
@@ -1004,52 +1056,52 @@ l_div_v_ds_dv:
 	*stack_ptr++= bool(* PCAST *pc++ OP  CAST *pc++);\
 	DISPATCH();
 
-#define REL_OPER_S_IS_IS(LABEL_PREFIX,OP) \
- LABEL_PREFIX ## s_is_is: \
+#define REL_OPER_S_IS_IS(PFX,OP) \
+ CASE (PFX ## s_is_is) \
 	REL_OPER_S_S_S_(OP,)
 
-#define REL_OPER_S_IS_IC(LABEL_PREFIX,OP) \
- LABEL_PREFIX ## s_is_ic: \
+#define REL_OPER_S_IS_IC(PFX,OP) \
+ CASE (PFX ## s_is_ic) \
 	REL_OPER_S_S_C_(OP,)
 
-#define REL_OPER_S_IS_IV(LABEL_PREFIX,OP) \
- LABEL_PREFIX ## s_is_iv: \
+#define REL_OPER_S_IS_IV(PFX,OP) \
+ CASE(PFX ## s_is_iv) \
 	REL_OPER_S_S_V_(OP,)
 
-#define REL_OPER_S_IV_IC(LABEL_PREFIX,OP) \
- LABEL_PREFIX ## s_iv_ic: \
+#define REL_OPER_S_IV_IC(PFX,OP) \
+ CASE (PFX ## s_iv_ic) \
 	REL_OPER_S_V_C_(OP,)
 
-#define REL_OPER_S_IV_IV(LABEL_PREFIX,OP) \
- LABEL_PREFIX ## s_iv_iv: \
+#define REL_OPER_S_IV_IV(PFX,OP) \
+ CASE (PFX ## s_iv_iv) \
 	REL_OPER_S_V_V_(OP,)
 
-#define REL_OPER_S_IV_NIV(LABEL_PREFIX,OP) \
- LABEL_PREFIX ## s_iv_inv: \
+#define REL_OPER_S_IV_NIV(PFX,OP) \
+ CASE (PFX ## s_iv_inv) \
 	REL_OPER_S_V_NV_(OP,)
 
-#define REL_OPER_S_DS_DS(LABEL_PREFIX,OP) \
- LABEL_PREFIX ## s_ds_ds: \
+#define REL_OPER_S_DS_DS(PFX,OP) \
+ CASE (PFX ## s_ds_ds) \
 	REL_OPER_S_S_S_(OP,*(double*)&)
 
-#define REL_OPER_S_DS_DC(LABEL_PREFIX,OP) \
- LABEL_PREFIX ## s_ds_dc: \
+#define REL_OPER_S_DS_DC(PFX,OP) \
+ CASE ( PFX ## s_ds_dc) \
 	REL_OPER_S_S_C_(OP,*(double*)&)
 
-#define REL_OPER_S_DS_DV(LABEL_PREFIX,OP) \
- LABEL_PREFIX ## s_ds_dv: \
+#define REL_OPER_S_DS_DV(PFX,OP) \
+ CASE ( PFX ## s_ds_dv) \
 	REL_OPER_S_S_V_(OP,*(double*)&)
 
-#define REL_OPER_S_DV_DC(LABEL_PREFIX,OP) \
- LABEL_PREFIX ## s_dv_dc: \
+#define REL_OPER_S_DV_DC(PFX,OP) \
+ CASE (PFX ## s_dv_dc) \
 	REL_OPER_S_V_C_(OP,*(double*)&)
 
-#define REL_OPER_S_DV_DV(LABEL_PREFIX,OP) \
- LABEL_PREFIX ## s_dv_dv: \
+#define REL_OPER_S_DV_DV(PFX,OP) \
+ CASE (PFX ## s_dv_dv) \
 	REL_OPER_S_V_V_(OP,*(double*)&)
 
-#define REL_OPER_S_DV_NDV(LABEL_PREFIX,OP) \
- LABEL_PREFIX ## s_dv_dnv: \
+#define REL_OPER_S_DV_NDV(PFX,OP) \
+ CASE (PFX ## s_dv_dnv) \
 	REL_OPER_S_V_NV_(OP,*(double*)&)
 
 
@@ -1069,51 +1121,58 @@ l_div_v_ds_dv:
 	REL_OPER_S_DV_DV(LABEL_PREFIX,OP); \
 	REL_OPER_S_DV_NDV(LABEL_PREFIX,OP); \
 
-REL_OPER_S_I(l_eq_,==)
-REL_OPER_S_D(l_eq_,==)
-REL_OPER_S_I(l_neq_,!=)
-REL_OPER_S_D(l_neq_,!=)
-REL_OPER_S_I(l_lt_,<)
-REL_OPER_S_D(l_lt_,<)
-REL_OPER_S_I(l_lte_,<=)
-REL_OPER_S_D(l_lte_,<=)
-REL_OPER_S_I(l_gt_,>)
-REL_OPER_S_D(l_gt_,>)
-REL_OPER_S_I(l_gte_,>=)
-REL_OPER_S_D(l_gte_,>=)
+REL_OPER_S_I(eq_,==)
+REL_OPER_S_D(eq_,==)
+REL_OPER_S_I(neq_,!=)
+REL_OPER_S_D(neq_,!=)
+REL_OPER_S_I(lt_,<)
+REL_OPER_S_D(lt_,<)
+REL_OPER_S_I(lte_,<=)
+REL_OPER_S_D(lte_,<=)
+REL_OPER_S_I(gt_,>)
+REL_OPER_S_D(gt_,>)
+REL_OPER_S_I(gte_,>=)
+REL_OPER_S_D(gte_,>=)
+
 
 
 /*
 
-l_lt_s_iv_ic_:
+CASE(lt_s_iv_ic_)
 	pci=const_cast<int64_t*>(&*pc);
 	++*(pci-1);//manipulate the code to the faster
 	*(int64_t**)pci=&frame_ptr[*pci];
 
-l_lt_s_ig_ic:
+CASE(lt_s_ig_ic)
 	lhs_iptr=(int64_t*)*pc++;
 	*stack_ptr++ = bool(*lhs_iptr < *pc++);
 	DISPATCH();
 
-l_gt_s_dv_dv_:
+CASE(gt_s_dv_dv_)
 	pci=const_cast<int64_t*>(&*pc);
 	++*(pci-1);//manipulate the code to the faster
 	*(int64_t**)pci=&frame_ptr[*pci];
 	++pci;
 	*(int64_t**)pci=&frame_ptr[*pci];
 
-l_gt_s_dg_dg:
+CASE(gt_s_dg_dg)
 	lhs_dptr=(double*)*pc++;
 	rhs_dptr=(double*)*pc++;
 	*stack_ptr++ = bool(*lhs_dptr > *rhs_dptr);
 	DISPATCH();
 */
 
-        exit_label:
+        CASE(exit)  return -1;
+        //exit_label:
 //        if (pc != pc_end)
   //      {
     //    	std::cout << "Warning:program stopped beyond the end (as opposed to at the end)" << std::endl;
       //  }
-        return -1;
+       // return -1;
+#if !VM_COMPUTED_GOTO
+default: VM_UNREACHABLE();
+} }
+#endif
+        
     }
 }

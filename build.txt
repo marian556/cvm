@@ -5,49 +5,126 @@ For the language motivation and the features see readme.txt.
 
 You can import this project folder into eclipse on ubuntu.
 
-This was tested:
+This compiler was used:
+cvm/examples$ gcc --version
+gcc (Debian 14.2.0-19) 14.2.0
+Copyright (C) 2024 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
 Eclipse IDE for C/C++ Developers
-Version: Oxygen.2 Release (4.7.2)
-Build id: 20171218-0600
-OS: Linux, v.4.15.0-33-generic, x86_64 / gtk 3.22.30, WebKit 2.20.5
+Version: 2025-12 (4.38.0)
+Build id: 20251204-0850
+it requires at least -std=c++20, it was test to build with -std=c++26 switch.
 
-or alternatively you can use makefile system with 'make' command bellow:
+You can use either command line to buil cvm compiler/interpreter
 
-Note: This is an experimental work in progress project that in current state will not work on Windows with Visual Studio 
-compiler due to lack of "calculated goto" language feature in windows compiler. 
-Only tested on GNU/Linux/ubuntu 18.04.01 LTS (bionic) with 64 bit g++ (Ubuntu 7.3.0-16ubuntu3) 7.3.0
+cvm$ g++ -std=c++20 -O3 src/main.cpp src/global_funcs.cpp src/libcvm/*.cpp -o cvm -lboost_chrono -lboost_filesystem
 
-This project uses boost/spirit X3 parser in an essential way. Project was tested on boost 1.69.0 
+cvm$ ./cvm examples/bisect_sqrt7_func.cvm 
+ duration=112806348 iterations =3100000 ns  time/iter:36 ns
+output of sqrt(7.0)=2.645751310978085 eps=0.000000001000000
+
+
+or you can use Eclipse and load folder with .cproject file
+Then when make Release with make file os create in eclipse.
+you can use makefile system with 'make all' 
+
+Note:This work uses computed goto with gcc compiler, Visual Studio compiler mvc lacks computed goto so there is a 30% slower 
+alternative solution using switch/branching in virtual machine. It should work on Microsoft Visual Studio , but it was not yet tested.
+
+Project tested on GNU/Linux/ubuntu 18.04.01 LTS (bionic) with 64 bit g++ (Ubuntu 7.3.0-16ubuntu3) 7.3.0 
+and debian/trixie GNU/Linux 13
+
+This project uses boost/spirit X3 parser in an essential way. Project was tested on boost 1.69.0 and 1.83
 (you may want to use and you can try to use your default system version of boost first)
-and is compiled with C++17.
+and is compiled with C++20 at least, it was tested and works with c++26 dialect
 
-marian@ubuntu:~$wget https://dl.bintray.com/boostorg/release/1.69.0/source/boost_1_69_0.tar.bz2
-marian@ubuntu:~$ tar xvjf boost_1_69_0.tar.bz2
+on ubuntu and debian install it with
+sudo apt install libboost-dev libboost-chrono-dev libboost-filesystem-dev
+
 
 ...Project is heavily adapted and extended from example calc9 in boost documentation:
-
 /usr/share/doc/libboost1.65-doc/examples/libs/spirit/example/x3/calc/calc9/
 ...or..
-
 ~/boost_1_69_0/libs/spirit/example/x3/calc/calc9/
 
 ...although spirit X3 parser is header only if you don't use your system boost you need to 
 ...proceed building boost,because we need boost_chrono and boost_filesystem at least to build...
 ...you may have to configure your build system to include boost include path...
-...g++ -std=c++17 -I/home/marian/boost_1_69_0 ....
+...g++ -std=c++20 -I/home/marian/boost_1_69_0 ....
 
-marian@ubuntu:~/cvm$cd Release
+$ cd Release
 
 ...you do only once build
-marian@ubuntu:~/cvm/Release$make
+$ make all
 ...cvm binary should appear in this folder..
 
-marian@ubuntu:~/cvm/Release$cd ../examples
+$ cd ../examples
 
 ...example output...
+with multiple runs to see more reliable timing  and with pinning execution to single Performance core P-core
+ You can see cvm is about 3 times faster than python (best case cvm is 3.5 faster than best case python)
+, still it is about 5 times slower than njit python and 15 times slower than c the same algorithm.
+cvm was compiled with -O3
 
-marian@ubuntu:~/cvm/examples$ ../Release/cvm   bisec_sqrt7_func.cvm
-output of sqrt(7.0)=2.645751311064591 iter=1000000 time=1422746855ns
 
-marian@ubuntu:~/cvm/examples$ ../Release/cvm  -o bisec_sqrt7_func.cvm
-output of sqrt(7.0)=2.645751311064591 iter=1000000 time=795718714ns
+cvm/examples$ taskset -c 2 python sqrt7.py
+sqrt(7)= 2.645751310978085  eps= 1e-09  iter= 3100000  time: 0.2548413990007248 s time/iter= 82.2069029034596 ns/iter
+cvm/examples$ taskset -c 2 python sqrt7.py
+sqrt(7)= 2.645751310978085  eps= 1e-09  iter= 3100000  time: 0.2718713369977195 s time/iter= 87.70043128958693 ns/iter
+cvm/examples$ taskset -c 2 python sqrt7.py
+sqrt(7)= 2.645751310978085  eps= 1e-09  iter= 3100000  time: 0.2669599630025914 s time/iter= 86.11611709761011 ns/iter
+cvm/examples$ taskset -c 2 python sqrt7.py
+sqrt(7)= 2.645751310978085  eps= 1e-09  iter= 3100000  time: 0.2803425449965289 s time/iter= 90.43307903113836 ns/iter
+cvm/examples$ taskset -c 2 python sqrt7.py
+sqrt(7)= 2.645751310978085  eps= 1e-09  iter= 3100000  time: 0.2710451559978537 s time/iter= 87.43392128963023 ns/iter
+cvm/examples$ taskset -c 2 python sqrt7.py
+sqrt(7)= 2.645751310978085  eps= 1e-09  iter= 3100000  time: 0.2672828000067966 s time/iter= 86.22025806670858 ns/iter
+cvm/examples$ taskset -c 2 python sqrt7.py
+sqrt(7)= 2.645751310978085  eps= 1e-09  iter= 3100000  time: 0.26294350800162647 s time/iter= 84.82048645213757 ns/iter
+cvm/examples$ taskset -c 2 python sqrt7.py
+sqrt(7)= 2.645751310978085  eps= 1e-09  iter= 3100000  time: 0.2773815449909307 s time/iter= 89.4779177390099 ns/iter
+cvm/examples$ taskset -c 2 python sqrt7.py
+sqrt(7)= 2.645751310978085  eps= 1e-09  iter= 3100000  time: 0.2686733250011457 s time/iter= 86.66881451649863 ns/iter
+cvm/examples$ taskset -c 2 ../Release/cvm bisect_sqrt7_func.cvm
+ duration=90997872 iterations =3100000 ns  time/iter:29 ns
+output of sqrt(7.0)=2.645751310978085 eps=0.000000001000000
+cvm/examples$ taskset -c 2 ../Release/cvm bisect_sqrt7_func.cvm
+ duration=90308999 iterations =3100000 ns  time/iter:29 ns
+output of sqrt(7.0)=2.645751310978085 eps=0.000000001000000
+cvm/examples$ taskset -c 2 ../Release/cvm bisect_sqrt7_func.cvm
+ duration=106114560 iterations =3100000 ns  time/iter:34 ns
+output of sqrt(7.0)=2.645751310978085 eps=0.000000001000000
+cvm/examples$ taskset -c 2 ../Release/cvm bisect_sqrt7_func.cvm
+ duration=86066613 iterations =3100000 ns  time/iter:27 ns
+output of sqrt(7.0)=2.645751310978085 eps=0.000000001000000
+cvm/examples$ taskset -c 2 ../Release/cvm bisect_sqrt7_func.cvm
+ duration=76377453 iterations =3100000 ns  time/iter:24 ns
+5 eps=0.000000001000000
+cvm/examples$ taskset -c 2 ../Release/cvm bisect_sqrt7_func.cvm
+ duration=94226232 iterations =3100000 ns  time/iter:30 ns
+output of sqrt(7.0)=2.645751310978085 eps=0.000000001000000
+cvm/examples$ taskset -c 2 ../Release/cvm bisect_sqrt7_func.cvm
+ duration=88637877 iterations =3100000 ns  time/iter:28 ns
+output of sqrt(7.0)=2.645751310978085 eps=0.000000001000000
+
+cvm/examples$ taskset -c 2 ./bisect_c
+C code: sqrt(7)=2.645751310978085 eps=0.000000001000000 iter=31000000 time=0.068s  time/iter=2.2 ns/iter
+cvm/examples$ taskset -c 2 ./bisect_c
+C code: sqrt(7)=2.645751310978085 eps=0.000000001000000 iter=31000000 time=0.053s  time/iter=1.7 ns/iter
+cvm/examples$ taskset -c 2 ./bisect_c
+C code: sqrt(7)=2.645751310978085 eps=0.000000001000000 iter=31000000 time=0.058s  time/iter=1.9 ns/iter
+cvm/examples$ taskset -c 2 python sqrt7_njit.py
+sqrt(7)= 2.645751310978085  eps= 1e-09  iter= 3100000  time: 0.01679943200724665 s time/iter= 5.419171615240855 ns/iter
+cvm/examples$ taskset -c 2 python sqrt7_njit.py
+sqrt(7)= 2.645751310978085  eps= 1e-09  iter= 3100000  time: 0.017556517996126786 s time/iter= 5.6633929019763825 ns/iter
+cvm/examples$ taskset -c 2 python sqrt7_njit.py
+sqrt(7)= 2.645751310978085  eps= 1e-09  iter= 3100000  time: 0.01711748499656096 s time/iter= 5.521769353729342 ns/iter
+cvm/examples$ 
+
+
+
+
+
+
