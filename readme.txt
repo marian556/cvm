@@ -9,11 +9,11 @@ All four are now measured pinned to the same P-core:
 Time per iteration: C about 2 ns, Numba about 5.5 ns, cvm about 29 ns (median of 7), CPython about 87 ns (median of 9).
 cvm is about 3x faster than CPython and about 15x slower than compiled C. 
 
-				ns/iteration				vs C				vs CPython
-C				about 1.9 (1.7 to 2.2)		1x					about 46x faster
-Numba @njit		about 5.5 (5.4 to 5.7)		about 3x slower		about 16x faster
-cvm				about 29 median (24 to 34)	about 15x slower	about 3x faster
-CPython 3.13	about 87 median (82 to 90)	about 46x slower	1x
+Implementation  ns/iteration            vs C              vs CPython
+C               about 1.9 (1.7 to 2.2)  1x                about 46x faster
+Numba @njit     about 5.5 (5.4 to 5.7)  about 3x slower   about 16x faster
+cvm             about 29 (24 to 34)     about 15x slower  about 3x faster
+CPython 3.13    about 87 (82 to 90)     about 46x slower  1x
 
 
 Note:
